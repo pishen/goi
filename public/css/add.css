@@ -1,0 +1,14 @@
+form {
+    margin-top: 100px;
+}
+
+.actions {
+    margin-top: 40px;
+}
+
+.actions button {
+    border: none;
+    background: none;
+    font-size: 40px;
+    margin: 0px 20px;
+}

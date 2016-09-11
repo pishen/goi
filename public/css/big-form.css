@@ -1,0 +1,19 @@
+input[type=text] {
+    display: block;
+    font-size: 40px;
+    margin: 30px auto 0px auto;
+    width: 100%;
+    border: 0px;
+    border-bottom: 3px solid #cccccc;
+    transition: all 0.5s;
+}
+
+input[type=text]:focus {
+    border-bottom: 3px solid #808080;
+}
+
+@media (min-width: 768px) {
+    input[type="text"] {
+        max-width: 450px;
+    }
+}
