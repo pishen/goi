@@ -13,7 +13,7 @@ object Helpers {
           name := "viewport",
           all.content := "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
         ),
-        tags2.title("日本語マシーン"),
+        tags2.title("ゴイマシーン"),
         link(
           href := "https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css",
           rel := "stylesheet"

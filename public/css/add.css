@@ -12,3 +12,13 @@ form {
     font-size: 40px;
     margin: 0px 20px;
 }
+
+.awesomplete {
+    display: block;
+    margin: auto;
+    max-width: 450px;
+}
+
+.awesomplete mark {
+    padding: 0;
+}

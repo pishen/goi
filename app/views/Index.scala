@@ -28,11 +28,12 @@ object Index {
                 method := "POST",
                 div(cls := "big-text text-center", q),
                 input(`type` := "hidden", name := "question", value := q),
-                Seq.fill(answerSize)(input(`type` := "text", name := "answer")),
+                input(`type` := "text", name := "answer", autofocus),
+                Seq.fill(answerSize - 1)(input(`type` := "text", name := "answer")),
                 input(`type` := "submit", hidden)
               )
             case None =>
-              div(cls := "big-text text-center", "日本語マシーン")
+              div(cls := "big-text text-center", "ゴイマシーン")
           }
         )
       )

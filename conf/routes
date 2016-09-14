@@ -7,6 +7,8 @@ GET     /logout                     controllers.Main.logout
 
 GET     /add                        controllers.Main.addPage
 POST    /add                        controllers.Main.add
+GET     /suggestions                controllers.Main.suggestions(q: String)
+GET     /answers                    controllers.Main.answers(q: String)
 
 # Map static resources from the /public folder to the /assets URL path
 GET     /assets/*file               controllers.Assets.versioned(path="/public", file: Asset)
