@@ -14,6 +14,8 @@ import slick.driver.JdbcProfile
 import slick.jdbc.meta.MTable
 import scala.util.Random
 import play.api.libs.json._
+import markatta.futiles.UnliftException
+import markatta.futiles.Lifting.Implicits._
 
 @Singleton
 class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) extends Controller {
@@ -107,30 +109,85 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
     }
   }
 
-  def index = Authenticated.async { request =>
-    val showCorrect = request.session.get("correct").isDefined
-    val res = request.userOpt match {
-      case Some(user) =>
-        db.run(vocabs.filter(v => v.userId === user.id).result).map { vocabs =>
-          Random.shuffle(vocabs).headOption match {
-            case Some(vocab) =>
-              val answerSize = vocabs.filter(_.question == vocab.question).size
-              views.Index(request.userOpt, showCorrect, Some(vocab.question), answerSize)
-            case None =>
-              views.Index(request.userOpt, showCorrect, None, 0)
-          }
-        }
-      case None =>
-        Future(views.Index(request.userOpt, showCorrect, None, 0))
-    }
-    res.map {
-      Ok(_).as(HTML).withSession(request.session - "correct")
+  def pickVocab(user: User) = {
+    db.run(vocabs.filter(v => v.userId === user.id).result).map { vocabs =>
+      if (vocabs.isEmpty) {
+        None
+      } else {
+        val mins = vocabs.groupBy(_.question).mapValues(_.map(_.correct).min)
+        val max = mins.values.max + 1
+        val counts = mins.mapValues(max - _)
+        val pickedQ = Random.shuffle(counts.toSeq.flatMap { case (q, c) => Seq.fill(c)(q) }).head
+        Some(vocabs.filter(_.question == pickedQ))
+      }
     }
   }
 
-  def validate = Authenticated(parse.urlFormEncoded) { request =>
-    //TODO
-    Redirect(routes.Main.index).withSession(request.session + ("correct" -> "true"))
+  //TODO validate
+  def index = Authenticated.async { request =>
+    val res = for {
+      user <- Future(request.userOpt).unlift("user not found")
+      vocabs <- pickVocab(user).unlift("vocab not found")
+    } yield {
+      import views.Index._
+      Ok(views.Index(
+        Some(user),
+        None,
+        Some(Content(vocabs.head.question, vocabs.map(v => Answer(v.answer, false)), true))
+      )).as(HTML)
+    }
+    res.recover {
+      case e: UnliftException =>
+        Ok(views.Index(request.userOpt, None, None)).as(HTML)
+    }
+  }
+
+  def validate = (Authenticated andThen Forced).async(parse.urlFormEncoded) { request =>
+    val reqMap = request.body.mapValues(_.filter(_ != ""))
+    val question = reqMap("question").head
+    //TODO make DB update atomic here
+    db.run {
+      vocabs.filter(v => v.userId === request.user.id && v.question === question).result
+    }.flatMap {
+      pickedVocabs =>
+        val answers = reqMap("answer").toSet
+        val ac = pickedVocabs.map(_.answer).toSet == answers
+        for {
+          correctUpdates <- if (reqMap("mask").head.toBoolean) {
+            db.run {
+              DBIO.seq(pickedVocabs.filter(v => answers.contains(v.answer)).map { pickedV =>
+                vocabs.filter { v =>
+                  v.userId === request.user.id &&
+                    v.question === question &&
+                    v.answer === pickedV.answer
+                }.map(_.correct).update(pickedV.correct + 1)
+              }: _*)
+            }
+          } else Future.successful(0)
+          newVocabs <- if (ac) pickVocab(request.user).unlift("vocab not found") else Future(Seq.empty)
+        } yield {
+          import views.Index._
+          Ok(views.Index(
+            Some(request.user),
+            Some(
+              if (ac) {
+                Message("Correct! Next one.", "green")
+              } else {
+                Message("Some answers are wrong.", "red")
+              }
+            ),
+            Some(Content(
+              if (ac) newVocabs.head.question else question,
+              if (ac) {
+                newVocabs.map(v => Answer(v.answer, false))
+              } else {
+                pickedVocabs.map(v => Answer(v.answer, !answers.contains(v.answer)))
+              },
+              ac
+            ))
+          )).as(HTML)
+        }
+    }
   }
 
   def addPage = (Authenticated andThen Forced) { request =>

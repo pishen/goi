@@ -1,5 +1,5 @@
 GET     /                           controllers.Main.index
-POST    /validate                   controllers.Main.validate
+POST    /                           controllers.Main.validate
 
 GET     /login                      controllers.Main.login
 GET     /callback                   controllers.Main.callback(code: String, state: String)
