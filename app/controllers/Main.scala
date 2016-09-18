@@ -16,6 +16,7 @@ import scala.util.Random
 import play.api.libs.json._
 import markatta.futiles.UnliftException
 import markatta.futiles.Lifting.Implicits._
+import play.api.Logger
 
 @Singleton
 class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) extends Controller {
@@ -123,7 +124,6 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
     }
   }
 
-  //TODO validate
   def index = Authenticated.async { request =>
     val res = for {
       user <- Future(request.userOpt).unlift("user not found")
@@ -145,6 +145,7 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
   def validate = (Authenticated andThen Forced).async(parse.urlFormEncoded) { request =>
     val reqMap = request.body.mapValues(_.filter(_ != ""))
     val question = reqMap("question").head
+    Logger.info(s"${request.user.name} answered ${question}")
     //TODO make DB update atomic here
     db.run {
       vocabs.filter(v => v.userId === request.user.id && v.question === question).result
@@ -205,6 +206,7 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
           val relatedVocabs = vocabs.filter {
             v => v.userId === request.user.id && v.question === question
           }
+          Logger.info(s"${request.user.name} added ${question}")
           db.run(relatedVocabs.map(_.answer).result).flatMap { existAnswers =>
             val toDelete = existAnswers.diff(answers)
             val toInsert = answers.diff(existAnswers)
