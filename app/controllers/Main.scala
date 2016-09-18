@@ -171,9 +171,9 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
             Some(request.user),
             Some(
               if (ac) {
-                Message("Correct! Next one.", "green")
+                Message("正解です、次の質問に答えましょう", "green")
               } else {
-                Message("Some answers are wrong.", "red")
+                Message("答えは正しくありません", "red")
               }
             ),
             Some(Content(

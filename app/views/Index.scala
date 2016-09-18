@@ -38,6 +38,7 @@ object Index {
                       Some(cls := "red-answer").filter(_ => answer.red),
                       `type` := "text",
                       name := "answer",
+                      autocomplete := "off",
                       Some(placeholder := answer.text).filter(_ => !content.mask),
                       Some(autofocus).filter(_ => content.mask && i == 0)
                     )

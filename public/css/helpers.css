@@ -19,3 +19,7 @@ a:active {
 .identity:hover {
     cursor: pointer;
 }
+
+footer {
+    height: 100px;
+}
