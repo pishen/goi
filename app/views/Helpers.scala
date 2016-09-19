@@ -29,16 +29,26 @@ object Helpers {
           case Some(user) =>
             div(
               cls := "identity dropdown",
-              p(cls := "dropdown-toggle", data.toggle := "dropdown", user.name),
+              button(
+                cls := "btn btn-default dropdown-toggle",
+                `type` := "button",
+                id := "dropdownMenu",
+                data.toggle := "dropdown",
+                aria.haspopup := "true",
+                aria.expanded := "true",
+                (user.name + " "),
+                span(cls := "caret")
+              ),
               ul(
                 cls := "dropdown-menu dropdown-menu-right",
+                aria.labelledby := "dropdownMenu",
                 li(a(href := "/", "テスト")),
                 li(a(href := "/add", "語彙を追加/編集")),
                 li(a(href := "/logout", "ログアウト"))
               )
             )
           case None =>
-            a(cls := "identity", href := "/login", "ログイン")
+            a(cls := "identity btn btn-default", href := "/login", role := "button", "ログイン")
         },
         content,
         footer(),
