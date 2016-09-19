@@ -11,6 +11,7 @@ form {
     background: none;
     font-size: 40px;
     margin: 0px 20px;
+    display: inline-block;
 }
 
 .awesomplete {
