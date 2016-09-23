@@ -115,11 +115,12 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
       if (vocabs.isEmpty) {
         None
       } else {
-        val mins = vocabs.groupBy(_.question).mapValues(_.map(_.correct).min)
-        val max = mins.values.max + 1
-        val counts = mins.mapValues(max - _)
-        val pickedQ = Random.shuffle(counts.toSeq.flatMap { case (q, c) => Seq.fill(c)(q) }).head
-        Some(vocabs.filter(_.question == pickedQ))
+        val highPriors = vocabs.filter(v => v.lastTime + v.coolDownLevel * 600000L < System.currentTimeMillis)
+        if (highPriors.nonEmpty) {
+          Some(Random.shuffle(highPriors).head)
+        } else {
+          Some(Random.shuffle(vocabs).head)
+        }
       }
     }
   }
@@ -127,13 +128,13 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
   def index = Authenticated.async { request =>
     val res = for {
       user <- Future(request.userOpt).unlift("user not found")
-      vocabs <- pickVocab(user).unlift("vocab not found")
+      vocab <- pickVocab(user).unlift("vocab not found")
     } yield {
       import views.Index._
       Ok(views.Index(
         Some(user),
         None,
-        Some(Content(vocabs.head.question, vocabs.map(v => Answer(v.answer, false)), true))
+        Some(Content(vocab.question, vocab.answers.map(a => Answer(a, false)), true))
       )).as(HTML)
     }
     res.recover {
@@ -143,29 +144,26 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
   }
 
   def validate = (Authenticated andThen Forced).async(parse.urlFormEncoded) { request =>
-    val reqMap = request.body.mapValues(_.filter(_ != ""))
-    val question = reqMap("question").head
+    //val reqMap = request.body.mapValues(_.filter(_ != ""))
+    val question = request.body("question").filter(_ != "").head
+    val answers = request.body("answer").filter(_ != "").toSet
+    val mask = request.body("mask").head.toBoolean
     Logger.info(s"${request.user.name} answered ${question}")
     //TODO make DB update atomic here
     db.run {
-      vocabs.filter(v => v.userId === request.user.id && v.question === question).result
+      vocabs.filter(v => v.userId === request.user.id && v.question === question).result.head
     }.flatMap {
-      pickedVocabs =>
-        val answers = reqMap("answer").toSet
-        val ac = pickedVocabs.map(_.answer).toSet == answers
+      vocab =>
+        val ac = vocab.answers.toSet == answers
         for {
-          correctUpdates <- if (reqMap("mask").head.toBoolean) {
-            db.run {
-              DBIO.seq(pickedVocabs.filter(v => answers.contains(v.answer)).map { pickedV =>
-                vocabs.filter { v =>
-                  v.userId === request.user.id &&
-                    v.question === question &&
-                    v.answer === pickedV.answer
-                }.map(_.correct).update(pickedV.correct + 1)
-              }: _*)
-            }
+          correctUpdates <- if (mask) {
+            val newVocab = vocab.copy(
+              lastTime = System.currentTimeMillis,
+              coolDownLevel = if (ac) vocab.coolDownLevel + 1 else 1
+            )
+            db.run(vocabs.insertOrUpdate(newVocab))
           } else Future.successful(0)
-          newVocabs <- if (ac) pickVocab(request.user).unlift("vocab not found") else Future(Seq.empty)
+          pickedVocab <- pickVocab(request.user).unlift("vocab not found")
         } yield {
           import views.Index._
           Ok(views.Index(
@@ -178,11 +176,11 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
               }
             ),
             Some(Content(
-              if (ac) newVocabs.head.question else question,
+              if (ac) pickedVocab.question else question,
               if (ac) {
-                newVocabs.map(v => Answer(v.answer, false))
+                pickedVocab.answers.map(a => Answer(a, false))
               } else {
-                pickedVocabs.map(v => Answer(v.answer, !answers.contains(v.answer)))
+                vocab.answers.map(a => Answer(a, !answers.contains(a)))
               },
               ac
             ))
@@ -203,22 +201,14 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
     } yield {
       action match {
         case "save" if answers.nonEmpty =>
-          val relatedVocabs = vocabs.filter {
-            v => v.userId === request.user.id && v.question === question
-          }
           Logger.info(s"${request.user.name} added ${question}")
-          db.run(relatedVocabs.map(_.answer).result).flatMap { existAnswers =>
-            val toDelete = existAnswers.diff(answers)
-            val toInsert = answers.diff(existAnswers)
-            val delete = relatedVocabs.filter(_.answer inSet toDelete).delete
-            val insert = vocabs ++= toInsert.map { answer =>
-              Vocab(request.user.id, question, answer, 0)
-            }
-            db.run(DBIO.seq(delete, insert)).map(_ => Redirect(routes.Main.addPage))
-          }
+          db.run {
+            vocabs.insertOrUpdate(Vocab(request.user.id, question, Json.stringify(Json.toJson(answers)), 0L, 0))
+          }.map(_ => Redirect(routes.Main.addPage))
         case "delete" =>
-          val delete = vocabs.filter(v => v.userId === request.user.id && v.question === question).delete
-          db.run(delete).map(_ => Redirect(routes.Main.addPage))
+          db.run {
+            vocabs.filter(v => v.userId === request.user.id && v.question === question).delete
+          }.map(_ => Redirect(routes.Main.addPage))
         case _ =>
           Future(BadRequest("Invalid request"))
       }
@@ -230,7 +220,7 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
     if (q == "") {
       Future(BadRequest)
     } else {
-      db.run(vocabs.filter(_.userId === request.user.id).map(_.question).distinct.result)
+      db.run(vocabs.filter(_.userId === request.user.id).map(_.question).result)
         .map(_.filter(_.toLowerCase.contains(q.toLowerCase)))
         .map(seq => Ok(Json.toJson(seq)))
     }
@@ -240,8 +230,8 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
     if (q == "") {
       Future(BadRequest)
     } else {
-      db.run(vocabs.filter(v => v.userId === request.user.id && v.question === q).map(_.answer).result)
-        .map(seq => Ok(Json.toJson(seq)))
+      db.run(vocabs.filter(v => v.userId === request.user.id && v.question === q).result.head)
+        .map(vocab => Ok(Json.toJson(vocab.answers)))
     }
   }
 }
