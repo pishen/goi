@@ -230,8 +230,8 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
     if (q == "") {
       Future(BadRequest)
     } else {
-      db.run(vocabs.filter(v => v.userId === request.user.id && v.question === q).result.head)
-        .map(vocab => Ok(Json.toJson(vocab.answers)))
+      db.run(vocabs.filter(v => v.userId === request.user.id && v.question === q).result.headOption)
+        .map(vocabOpt => Ok(Json.toJson(vocabOpt.fold(Seq.empty[String])(_.answers))))
     }
   }
 }
