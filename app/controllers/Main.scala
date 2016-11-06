@@ -17,6 +17,7 @@ import play.api.libs.json._
 import markatta.futiles.UnliftException
 import markatta.futiles.Lifting.Implicits._
 import play.api.Logger
+import math._
 
 @Singleton
 class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) extends Controller {
@@ -104,8 +105,10 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
   val vocabs = TableQuery[Vocabs]
 
   db.run(MTable.getTables).foreach { tables =>
+    Logger.info("checking tables")
     val existTables = tables.map(_.name.name).toSet
     if (!existTables.contains(vocabs.baseTableRow.tableName)) {
+      Logger.info("creating table")
       db.run(vocabs.schema.create)
     }
   }
@@ -115,7 +118,8 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
       if (vocabs.isEmpty) {
         None
       } else {
-        val highPriors = vocabs.filter(v => v.lastTime + v.coolDownLevel * 600000L < System.currentTimeMillis)
+        //at most 227 days for level 15
+        val highPriors = vocabs.filter(v => v.lastTime + pow(2, (v.coolDownLevel min 15).toDouble).toLong * 600000L < System.currentTimeMillis)
         if (highPriors.nonEmpty) {
           Some(Random.shuffle(highPriors).head)
         } else {
@@ -144,7 +148,6 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
   }
 
   def validate = (Authenticated andThen Forced).async(parse.urlFormEncoded) { request =>
-    //val reqMap = request.body.mapValues(_.filter(_ != ""))
     val question = request.body("question").filter(_ != "").head
     val answers = request.body("answer").filter(_ != "").toSet
     val mask = request.body("mask").head.toBoolean
