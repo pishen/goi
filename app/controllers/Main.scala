@@ -118,12 +118,11 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
       if (vocabs.isEmpty) {
         None
       } else {
-        //at most 227 days for level 15
-        val highPriors = vocabs.filter(v => v.lastTime + pow(2, (v.coolDownLevel min 15).toDouble).toLong * 600000L < System.currentTimeMillis)
+        val highPriors = vocabs.filter(v => v.lastTime + v.coolDownLevel * 3600000L < System.currentTimeMillis)
         if (highPriors.nonEmpty) {
-          Some(Random.shuffle(highPriors).head)
+          Some(Random.shuffle(highPriors).head -> highPriors.size)
         } else {
-          Some(Random.shuffle(vocabs).head)
+          Some(Random.shuffle(vocabs).head -> 0)
         }
       }
     }
@@ -132,7 +131,7 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
   def index = Authenticated.async { request =>
     val res = for {
       user <- Future(request.userOpt).unlift("user not found")
-      vocab <- pickVocab(user).unlift("vocab not found")
+      (vocab, _) <- pickVocab(user).unlift("vocab not found")
     } yield {
       import views.Index._
       Ok(views.Index(
@@ -162,18 +161,18 @@ class Main @Inject() (ws: WSClient, dbConfigProvider: DatabaseConfigProvider) ex
           correctUpdates <- if (mask) {
             val newVocab = vocab.copy(
               lastTime = System.currentTimeMillis,
-              coolDownLevel = if (ac) vocab.coolDownLevel + 1 else 1
+              coolDownLevel = if (ac) vocab.coolDownLevel + 24 else 1
             )
             db.run(vocabs.insertOrUpdate(newVocab))
           } else Future.successful(0)
-          pickedVocab <- pickVocab(request.user).unlift("vocab not found")
+          (pickedVocab, cooledDownCount) <- pickVocab(request.user).unlift("vocab not found")
         } yield {
           import views.Index._
           Ok(views.Index(
             Some(request.user),
             Some(
               if (ac) {
-                Message("正解です、次の質問に答えましょう", "green")
+                Message(s"正解です、あと $cooledDownCount 題が残っています", "green")
               } else {
                 Message("答えは正しくありません", "red")
               }
